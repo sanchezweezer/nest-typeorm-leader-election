@@ -1,10 +1,12 @@
 {
   "name": "nest-leader-election",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Distributed leader election for NestJS",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "type": "module",
+  "git": "https://github.com/sanchezweezer/nest-typeorm-leader-election.git",
+  "issues": "https://github.com/sanchezweezer/nest-typeorm-leader-election/issues",
   "scripts": {
     "build": "tsc",
     "example:run:first": "PORT=3000 tsx test/example/main.ts",

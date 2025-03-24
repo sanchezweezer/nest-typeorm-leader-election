@@ -3,24 +3,58 @@
 [![npm version](https://img.shields.io/npm/v/nest-leader-election.svg)](https://www.npmjs.com/package/nest-leader-election)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Распределенный выбор лидера для NestJS приложений с использованием TypeORM и PostgreSQL.
+Distributed leader election for NestJS applications using TypeORM and PostgreSQL.
 
-## Особенности
+## Problem Statement
 
-- 🚀 Интеграция с NestJS DI
-- 🛡 Автоматическое продление аренды
-- 🔄 Поддержка кластеров и горизонтального масштабирования
-- ⚡️ Защита от "split-brain" через Advisory Locks
-- 🧩 Готовые декораторы для контроллеров
-- 📦 Standalone режим для использования вне NestJS
+In distributed systems and clustered environments, the following challenges often arise:
 
-## Установка
+- **Resource Conflicts**
+  Multiple application instances may simultaneously attempt to:
+  - Execute periodic tasks (cron jobs)
+  - Modify shared data
+  - Send duplicate notifications
 
+- **Execution Reliability**
+  - No guarantee tasks will complete if any node fails
+  - Risk of data corruption with concurrent access
+
+- **Resource Efficiency**
+  - Redundant resource consumption from duplicate operations
+  - Inability to balance stateful operations
+
+- **Implementation Complexity**
+  - Requires low-level work with locks and transactions
+  - No standardized way to manage leader lifecycle
+
+**How This Library Helps**:
+- ✅ Ensures **single executor** for critical operations
+- ✅ Provides **automatic leadership failover** during failures
+- ✅ Prevents **concurrent access** to shared resources
+- ✅ Offers **ready-to-use abstractions** for NestJS applications
+- ✅ Solves **split-brain** via database atomic operations
+
+**Typical Use Cases**:
+- Executing periodic tasks (DB migrations, email campaigns)
+- Coordinating distributed transactions
+- Managing access to exclusive resources
+- Orchestrating background processes in Kubernetes clusters
+
+## Features
+
+- 🚀 NestJS DI Integration
+- 🛡 Automatic Lease Renewal
+- 🔄 Cluster and Horizontal Scaling Support
+- ⚡️ Split-Brain Protection via Advisory Locks
+- 🧩 Ready-to-Use Controller Decorators
+- 📦 Standalone Mode for Non-NestJS Usage
+
+## Installation
 ```bash
 npm install nest-leader-election @nestjs/core @nestjs/typeorm typeorm pg reflect-metadata
 ```
-## Быстрый старт
-1. Импорт модуля
+## Quick Start
+1. Import Module
 ```typescript
 // app.module.ts
 import { Module } from '@nestjs/common';
@@ -45,7 +79,7 @@ import { LeaderElectorModule } from 'nest-leader-election';
 })
 export class AppModule {}
 ```
-2. Использование в сервисе
+2. Use in Services
 ```typescript
 // tasks.service.ts
 import { Injectable } from '@nestjs/common';
@@ -57,24 +91,24 @@ export class TasksService {
 
   async performCriticalTask() {
     if (this.leaderElector.amILeader()) {
-      // Логика, выполняемая только лидером
+      // Logic executed only by the leader
       console.log('Performing leader-only task');
     }
   }
 }
 ```
 
-## Конфигурация
-  - Настройки модуля
+## Configuration
+  - Module Settings
     ```typescript
       LeaderElectorModule.forRoot({
-        leaseDuration: 15000,  // Время аренды в ms (по умолчанию: 10000)
-        renewalInterval: 5000, // Интервал продления (по умолчанию: 3000)
-        jitterRange: 2000,     // Разброс времени запросов (по умолчанию: 2000)
-        lockId: 12345,         // Идентификатор блокировки (по умолчанию: 1)
+        leaseDuration: 15000,  // Lease duration in ms (default: 10000)
+        renewalInterval: 5000, // Renewal interval (default: 3000)
+        jitterRange: 2000,     // Request timing variance (default: 2000)
+        lockId: 12345,         // Lock identifier (default: 1)
       })
     ````
-  - Переменные окружения
+  - Environment Variables
     ```bash
         LE_LEASE_DURATION=15000
         LE_RENEWAL_INTERVAL=5000
@@ -82,7 +116,7 @@ export class TasksService {
         LE_LOCK_ID=12345
     ````
 
-## Standalone использование
+## Standalone Usage
 
 ```typescript
 import { DataSource } from 'typeorm';
@@ -91,7 +125,7 @@ import { LeaderElectorCore, LeaderLease } from 'nest-leader-election';
 async function bootstrap() {
   const dataSource = new DataSource({
     type: 'postgres',
-    // ... конфигурация
+    // ... configuration
     entities: [LeaderLease],
   });
 
@@ -117,52 +151,53 @@ bootstrap();
 
 ## API
 - `LeaderElectorService`
-    - `amILeader(): boolean` - Проверка статуса лидера
-    - `release(): Promise<void>` - Освобождение лидерства
+    - `amILeader(): boolean` - Check leadership status
+    - `release(): Promise<void>` - Release leadership
 
-## Лучшие практики
-- Всегда настраивайте `leaseDuration` в 2-3 раза больше чем renewalInterval
-- Используйте уникальные `lockId` для разных сервисов
-- Мониторьте таблицу leader_lease
+## Best Practices
+- Always configure `leaseDuration` 2-3x longer than renewalInterval
+- Use unique `lockId` for different services
+- Monitor `leader_lease` table
 
-## Дополнительные настройки
-- `jitterRange`: Разброс времени запросов (по умолчанию: 2000)
-- `lockId`: Идентификатор блокировки (по умолчанию: 1)
+## Operation logic
+1. Initialization
+- Table creation:
+First, the `leader_lease` table will start to exist. If the table does not exist, it will be created with the following fields:
+- `id` (lock identifier)
+- `leader_id` (unique node identifier)
+- `expires_at` (lease expiration time)
+- `created_at` (record creation time)
 
-## Логика работы
-1. Инициализация
-  - Создание таблицы:
-    При старте проверяется существование таблицы `leader_lease`. Если таблицы нет, она создается с полями:
-    - `id` (идентификатор блокировки)
-    - `leader_id` (уникальный идентификатор узла)
-    - `expires_at` (время истечения аренды)
-    - `created_at` (время создания записи)
+- Indexes and constraints:
+An index is created for quick determination by `expires_at` and a CHECK constraint that guarantees the correctness of timestamps.
 
-  - Индексы и ограничения:
-    Создается индекс для быстрого поиска по `expires_at` и CHECK-ограничение, гарантирующее корректность временных меток.
+2. Lease mechanism
+- Leadership capture:
+- The node tries to insert a new record with `expires_at = NOW() LeaseDuration`.
+- If the record already exists:
+- Proves that the current lease has not expired `(expires_at < NOW())`.
+- If the lease has expired, atomically update the entry, setting its `leader_id` and a new `expires_at`.
 
-2. Механизм аренды (Lease)
-- Захват лидерства:
-  - Узел пытается вставить новую запись с `expires_at = NOW() + leaseDuration`.
-  - Если запись уже существует:
-    - Проверяет, не истекла ли текущая аренда `(expires_at < NOW())`.
-    - Если аренда истекла, атомарно обновляет запись, устанавливая свой `leader_id` и новый `expires_at`.
+3. Renewing Leadership
+- Periodic update:
+- The current leader updates the `expires_at` of the `renewalInterval(±jitter)` service to renew the lease.
 
-3. Продление лидерства
-  - Периодическое обновление:
-    - Текущий лидер обновляет `expires_at` каждые `renewalInterval (± jitter)`, чтобы продлить аренду.
+- Jitter mechanism:
+- Random delay (±2 seconds by default) between synchronization attempts, to accommodate requests from different nodes.
 
-  - Jitter-механизм:
-    - Случайная задержка (±2 сек по умолчанию) между попытками, чтобы избежать синхронизации запросов от разных узлов.
+4. Releasing Leadership
+- Explicitly calling `release()`:
+Deletes the entry with the current `leader_id`.
 
-4. Освобождение лидерства
-    - Явный вызов `release()`:
-    Удаляет запись с текущим `leader_id`.
+- Automatic release:
+If the leader fails to renew the lease, other nodes automatically take over the leadership via `leaseDuration`.
 
-  - Автоматическое освобождение:
-  Если лидер не успел продлить аренду, через `leaseDuration` другие узлы автоматически захватят лидерство.
+5. Cleanup sensitive records
+- Background task:
+Every `6 × LeaseDuration (± jitter)` records are committed where `expires_at < NOW() - 5 sec`.
+- Goal: Prevent accumulation of "dead" records of standard records.
 
-5. Очистка устаревших записей
-- Фоновая задача:
-    Каждые` 6 × leaseDuration (± jitter)` удаляет записи, где `expires_at < NOW() - 5 sec`.
-- Цель: Предотвращение накопления "мертвых" записей при нештатных сценариях.
+### This algorithm is ideal for:
+- 3-node+ clusters
+- A system where Kubernetes Leader Election cannot be used
+- Scenarios with requirements for atomicity of operations
