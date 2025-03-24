@@ -5,8 +5,12 @@
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "type": "module",
-  "git": "https://github.com/sanchezweezer/nest-typeorm-leader-election.git",
-  "issues": "https://github.com/sanchezweezer/nest-typeorm-leader-election/issues",
+  "homepage": "https://github.com/sanchezweezer/nest-typeorm-leader-election",
+  "author": "Sanchez Weezer <sanchezweezer@mail.ru>",
+  "repository": {
+    "url": "https://github.com/sanchezweezer/nest-typeorm-leader-election.git",
+    "type": "git"
+  },
   "scripts": {
     "build": "tsc",
     "example:run:first": "PORT=3000 tsx test/example/main.ts",
