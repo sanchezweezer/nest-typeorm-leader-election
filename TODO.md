@@ -1,0 +1,3 @@
+- add npm pub
+- add tests
+- add example for docker start nest app

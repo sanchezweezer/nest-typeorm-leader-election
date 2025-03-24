@@ -1,0 +1,49 @@
+{
+  "name": "nest-leader-election",
+  "version": "1.0.0",
+  "description": "Distributed leader election for NestJS",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "example:run:first": "PORT=3000 tsx test/example/main.ts",
+    "example:run:second": "PORT=3001 tsx test/example/main.ts",
+    "prepublish": "npm run build"
+  },
+  "peerDependencies": {
+    "@nestjs/common": ">=9.0.0 || >=10 || >=11",
+    "@nestjs/typeorm": ">=9.0.0 || >=10 || >=11",
+    "typeorm": "^0.3.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": ">=11",
+    "@nestjs/core": ">=11",
+    "@nestjs/platform-express": "^11.0.12",
+    "@types/node": "^18.0.0",
+    "dotenv": "^16.4.7",
+    "pg": "^8.14.1",
+    "reflect-metadata": "^0.2.2",
+    "ts-node": "^10.9.2",
+    "tsx": "4.19.3",
+    "typescript": "^4.7.0"
+  },
+  "engines": {
+    "node": "22.14.0"
+  },
+  "keywords": [
+    "nest",
+    "typeorm",
+    "leader-election",
+    "distributed-systems",
+    "pg",
+    "postgresql",
+    "postgres"
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "esbuild"
+    ]
+  }
+}

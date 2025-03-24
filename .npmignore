@@ -1,0 +1,6 @@
+test/
+src/
+docker*
+dist/test
+.env
+TODO*
