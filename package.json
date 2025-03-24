@@ -11,7 +11,7 @@
     "build": "tsc",
     "example:run:first": "PORT=3000 tsx test/example/main.ts",
     "example:run:second": "PORT=3001 tsx test/example/main.ts",
-    "prepublish": "npm run build"
+    "prepublish": "pnpm run build"
   },
   "peerDependencies": {
     "@nestjs/common": ">=9.0.0 || >=10 || >=11",
