@@ -1,10 +1,11 @@
 import { Logger } from "@nestjs/common";
-import { Repository, type DataSource } from "typeorm";
+import { Repository, type DataSource, QueryFailedError } from "typeorm";
 import { LeaderLease, createLeaderLeaseEntity } from "../entities/index.js";
 
 export interface LeaderElectorConfig {
-  leaseDuration: number;
+  leaseDuration?: number;
   renewalInterval?: number;
+  baseCleanInterval?: number;
   jitterRange?: number;
   lockId?: number;
   instanceId?: string;
@@ -18,6 +19,7 @@ export class LeaderElectorCore {
   private isLeader = false;
   private renewalTimer?: NodeJS.Timeout;
   private readonly baseLeaseDuration: number;
+  private readonly baseCleanInterval: number;
   private readonly baseRenewalInterval: number;
   private readonly jitterRange: number;
   private readonly instanceId: string;
@@ -27,9 +29,11 @@ export class LeaderElectorCore {
     private readonly leaderLeaseRepository: Repository<LeaderLease>,
     config: LeaderElectorConfig,
   ) {
-    this.baseLeaseDuration = config.leaseDuration ?? 10_000;
+    this.baseLeaseDuration = config.leaseDuration ?? 30_000;
+    this.baseCleanInterval =
+      config.baseCleanInterval ?? this.baseLeaseDuration * 2;
     this.baseRenewalInterval =
-      config.renewalInterval ?? config.leaseDuration / 3;
+      config.renewalInterval ?? this.baseLeaseDuration / 3;
     this.jitterRange = config.jitterRange ?? 2_000;
     this.LOCK_ID = config.lockId ?? 1;
     this.schema = config.schema ?? "public";
@@ -51,7 +55,8 @@ export class LeaderElectorCore {
 
   protected async initialize() {
     await this.createLockTableIfNotExists();
-    this.startCleanupJob();
+    // TODO: может стоит перенести очистку только на лидера?
+    await this.startCleanupJob();
     this.tryAcquireLeaseWithJitter();
   }
 
@@ -69,13 +74,20 @@ export class LeaderElectorCore {
           CHECK (expires_at > created_at)
         );
 
+        CREATE UNIQUE INDEX IF NOT EXISTS leader_lease_id_leader_id_unique
+            on leader_schema.leader_lease (id, leader_id);
+
         CREATE INDEX IF NOT EXISTS leader_lease_expires
         ON ${this.schema}.leader_lease (expires_at);
       `);
   }
 
-  private startCleanupJob() {
-    setInterval(() => this.cleanupExpiredLeases(), 60_000 + this.getJitter());
+  private async startCleanupJob() {
+    await this.cleanupExpiredLeases();
+    setInterval(
+      () => this.cleanupExpiredLeases(),
+      this.baseCleanInterval + this.getJitter(),
+    );
   }
 
   private async cleanupExpiredLeases() {
@@ -91,10 +103,10 @@ export class LeaderElectorCore {
       this.logger.error("Cleanup failed:", error);
     }
   }
-
   private tryAcquireLeaseWithJitter() {
-    const delay = this.baseRenewalInterval + this.getJitter();
-    setTimeout(() => this.tryAcquireLease(), delay);
+    if (this.renewalTimer) clearTimeout(this.renewalTimer);
+    const interval = this.baseRenewalInterval + this.getJitter();
+    this.renewalTimer = setTimeout(() => this.tryAcquireLease(), interval);
   }
 
   private async tryAcquireLease() {
@@ -104,61 +116,49 @@ export class LeaderElectorCore {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Попытка продления существующей аренды
-      const renewalResult = await queryRunner.manager.update(
+      // 1. Попытка атомарного upsert
+      await queryRunner.manager.upsert(
         LeaderLease,
-        { id: this.LOCK_ID, leaderId: this.instanceId },
-        { expiresAt: () => `NOW() + INTERVAL '${this.baseLeaseDuration} ms'` },
+        {
+          id: this.LOCK_ID,
+          leaderId: this.instanceId,
+          expiresAt: () => `NOW() + INTERVAL '${this.baseLeaseDuration} ms'`,
+        },
+        {
+          conflictPaths: ["id", "leaderId"],
+          skipUpdateIfNoValuesChanged: true,
+        },
       );
 
-      if (renewalResult.affected! > 0) {
-        await queryRunner.commitTransaction();
-        this.handleLeadershipAcquired();
-        return;
-      }
-
-      // 2. Попытка захвата новой аренды
-      const newLease = this.leaderLeaseRepository.create({
-        id: this.LOCK_ID,
-        leaderId: this.instanceId,
-        expiresAt: new Date(Date.now() + this.baseLeaseDuration),
-      });
-
-      await queryRunner.manager
-        .createQueryBuilder()
-        .insert()
-        .into(LeaderLease)
-        .values(newLease)
-        .orIgnore()
-        .execute();
-
-      const currentLeader = await queryRunner.manager.findOne(LeaderLease, {
+      // 2. Проверка, является ли текущий узел лидером
+      const currentLease = await queryRunner.manager.findOne(LeaderLease, {
         where: { id: this.LOCK_ID },
       });
 
-      if (!currentLeader || currentLeader.expiresAt < new Date()) {
-        await queryRunner.manager.upsert(
-          LeaderLease,
-          {
-            id: this.LOCK_ID,
-            leaderId: this.instanceId,
-            expiresAt: newLease.expiresAt,
-          },
-          ["id"],
-        );
-
+      if (currentLease?.leaderId === this.instanceId) {
         this.handleLeadershipAcquired();
+      } else if (this.isLeader) {
+        await this.release();
       }
 
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error("Lease operation failed:", error);
+      if (
+        error instanceof QueryFailedError &&
+        error.driverError.code === "23505" &&
+        ["leader_lease_pkey", "leader_lease_pk"].includes(
+          error.driverError.constraint,
+        )
+      ) {
+        this.logger.error("Lease operation failed: other instance is leader");
+      } else {
+        this.logger.error("Lease operation failed:", error);
+      }
+      await this.release();
     } finally {
       await queryRunner.release();
-      if (!this.isLeader) {
-        this.tryAcquireLeaseWithJitter();
-      }
+      this.tryAcquireLeaseWithJitter();
     }
   }
 
@@ -167,24 +167,21 @@ export class LeaderElectorCore {
       this.logger.log("🎉 Acquired leadership");
       this.isLeader = true;
     }
-    this.scheduleLeaseRenewal();
-  }
-
-  private scheduleLeaseRenewal() {
-    if (this.renewalTimer) clearTimeout(this.renewalTimer);
-    const interval = this.baseRenewalInterval + this.getJitter();
-    this.renewalTimer = setTimeout(() => this.tryAcquireLease(), interval);
   }
 
   public async release() {
-    await this.leaderLeaseRepository.delete({
-      id: this.LOCK_ID,
-      leaderId: this.instanceId,
-    });
+    // сначала выключаем локальную логику
+    if (this.isLeader) {
+      this.isLeader = false;
+      if (this.renewalTimer) clearTimeout(this.renewalTimer);
 
-    this.isLeader = false;
-    if (this.renewalTimer) clearTimeout(this.renewalTimer);
-    this.logger.log("Released leadership gracefully");
+      await this.leaderLeaseRepository.delete({
+        id: this.LOCK_ID,
+        leaderId: this.instanceId,
+      });
+
+      this.logger.log("Released leadership gracefully");
+    }
   }
 
   public async shutdown() {
