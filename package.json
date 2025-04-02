@@ -1,6 +1,6 @@
 {
   "name": "nest-leader-election",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Distributed leader election for NestJS",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
