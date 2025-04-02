@@ -1,2 +1,3 @@
 - add tests
 - add example for docker start nest app
+- change to pg from typeorm
