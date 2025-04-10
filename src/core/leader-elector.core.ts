@@ -10,6 +10,7 @@ export interface LeaderElectorConfig {
   lockId?: number;
   instanceId?: string;
   schema?: string;
+  createTableOnInit?: boolean;
 }
 
 export class LeaderElectorCore {
@@ -24,6 +25,7 @@ export class LeaderElectorCore {
   private readonly jitterRange: number;
   private readonly instanceId: string;
   private readonly schema: string;
+  private readonly createTableOnInit: boolean;
 
   constructor(
     private readonly leaderLeaseRepository: Repository<LeaderLease>,
@@ -37,6 +39,7 @@ export class LeaderElectorCore {
     this.jitterRange = config.jitterRange ?? 2_000;
     this.LOCK_ID = config.lockId ?? 1;
     this.schema = config.schema ?? "public";
+    this.createTableOnInit = config.createTableOnInit ?? false;
     this.instanceId =
       config.instanceId ?? Math.random().toString(36).substring(2, 8);
   }
@@ -54,7 +57,7 @@ export class LeaderElectorCore {
   }
 
   protected async initialize() {
-    await this.createLockTableIfNotExists();
+    if (this.createTableOnInit) await this.createLockTableIfNotExists();
     // TODO: может стоит перенести очистку только на лидера?
     await this.startCleanupJob();
     await this.tryAcquireLease();
@@ -116,10 +119,10 @@ export class LeaderElectorCore {
     try {
       // 1. Попытка атомарного upsert
       const updated = await queryRunner.manager.query<{ created_at: string }[]>(
-        `INSERT INTO "leader_schema"."leader_lease"("id", "leader_id", "expires_at", "created_at")
+        `INSERT INTO ${this.schema}."leader_lease"("id", "leader_id", "expires_at", "created_at")
       VALUES ($1, $2, NOW() + INTERVAL '15000 ms', DEFAULT)
       ON CONFLICT ("id") DO UPDATE SET "expires_at" = EXCLUDED."expires_at"
-      WHERE "leader_schema"."leader_lease".id = EXCLUDED.id AND "leader_schema"."leader_lease".leader_id = EXCLUDED.leader_id
+      WHERE ${this.schema}."leader_lease".id = EXCLUDED.id AND ${this.schema}."leader_lease".leader_id = EXCLUDED.leader_id
       RETURNING "created_at"`,
         [this.LOCK_ID, this.instanceId],
       );
