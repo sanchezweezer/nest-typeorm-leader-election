@@ -1,11 +1,14 @@
-import { Module, DynamicModule, Provider } from "@nestjs/common";
+import { Module, DynamicModule, Provider, Global } from "@nestjs/common";
 import { TypeOrmModule, getRepositoryToken } from "@nestjs/typeorm";
 import { type Repository, DataSource } from "typeorm";
 import { LeaderLease, createLeaderLeaseEntity } from "../entities/index.js";
 import { LeaderElectorService } from "./service.js";
 import { LeaderElectorConfig } from "../core/leader-elector.core.js";
 
-@Module({})
+@Global()
+@Module({
+  exports: [LeaderElectorService],
+})
 export class LeaderElectorModule {
   static forRoot(config: LeaderElectorConfig): DynamicModule {
     const entity = createLeaderLeaseEntity(config.schema);
