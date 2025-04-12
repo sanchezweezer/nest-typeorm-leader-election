@@ -2,6 +2,12 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { LeaderElectorModule, LeaderLease } from "../../src/index.js";
 import { DataSource } from "typeorm";
+import { LeaderElectionMigrationBase } from "../../src/migration.js";
+
+class LeaderElectionMigration extends LeaderElectionMigrationBase {
+  schema = "leader_schema";
+  name = "leader_election_migration" + Date.now();
+}
 
 @Module({
   imports: [
@@ -19,6 +25,7 @@ import { DataSource } from "typeorm";
         migrationsRun: true,
         logging: ["query", "error"],
         entities: [LeaderLease],
+        migrations: [LeaderElectionMigration],
       }),
       dataSourceFactory: async (options) => {
         if (!options) throw new Error("Options are required");
@@ -30,6 +37,7 @@ import { DataSource } from "typeorm";
     LeaderElectorModule.forRoot({
       schema: process.env.DB_SCHEMA,
       leaseDuration: 15000,
+      createTableOnInit: false,
     }),
   ],
 })

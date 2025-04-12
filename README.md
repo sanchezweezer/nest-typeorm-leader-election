@@ -106,15 +106,18 @@ export class TasksService {
         renewalInterval: 5000, // Renewal interval (default: 3000)
         jitterRange: 2000,     // Request timing variance (default: 2000)
         lockId: 12345,         // Lock identifier (default: 1)
+        createTableOnInit: false, // if you use migration
       })
     ````
-  - Environment Variables
-    ```bash
-        LE_LEASE_DURATION=15000
-        LE_RENEWAL_INTERVAL=5000
-        LE_JITTER_RANGE=2000
-        LE_LOCK_ID=12345
-    ````
+  - Migration (use if you use different users for migrations and runtime in typeorm)
+    ```typescript
+    import { LeaderElectionMigrationBase } from "nest-leader-election";
+
+    class LeaderElectionMigration extends LeaderElectionMigrationBase {
+      schema = "leader_schema"; // default - 'public'
+      name = "leader_election_migration" + Date.now(); // your timestamp here
+    }
+    ```
 
 ## Standalone Usage
 

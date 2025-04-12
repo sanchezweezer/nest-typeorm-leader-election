@@ -39,7 +39,7 @@ export class LeaderElectorCore {
     this.jitterRange = config.jitterRange ?? 2_000;
     this.LOCK_ID = config.lockId ?? 1;
     this.schema = config.schema ?? "public";
-    this.createTableOnInit = config.createTableOnInit ?? false;
+    this.createTableOnInit = config.createTableOnInit ?? true;
     this.instanceId =
       config.instanceId ?? Math.random().toString(36).substring(2, 8);
   }
